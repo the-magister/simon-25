@@ -14,6 +14,8 @@
  * M5StickCPlus2: https://github.com/m5stack/M5StickCPlus2
  */
 
+// https://docs.m5stack.com/en/arduino/m5stickc_plus2/program
+
 #include "M5StickCPlus2.h"
 
 void setup() {
