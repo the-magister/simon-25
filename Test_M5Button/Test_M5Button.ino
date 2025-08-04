@@ -16,48 +16,50 @@
 
 // https://docs.m5stack.com/en/arduino/m5stickc_plus2/program
 
-#include "M5StickCPlus2.h"
+#include "M5Unified.h"
+#include "M5GFX.h"
 
 void setup() {
+    // https://docs.m5stack.com/en/arduino/m5gfx/m5gfx_appendix
     auto cfg = M5.config();
-    StickCP2.begin(cfg);
-    StickCP2.Display.setRotation(1);
-    StickCP2.Display.setTextColor(GREEN);
-    StickCP2.Display.setTextDatum(middle_center);
-    StickCP2.Display.setTextFont(&fonts::Orbitron_Light_24);
-    StickCP2.Display.setTextSize(1);
-    StickCP2.Display.drawString("Button Test", StickCP2.Display.width() / 2,
-                                StickCP2.Display.height() / 2);
+    M5.begin(cfg);
+    M5.Display.setRotation(3);
+    M5.Display.setTextColor(PURPLE);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextFont(&fonts::FreeSans12pt7b);
+    M5.Display.setTextSize(1.3);
+    M5.Display.drawString("Button Test", M5.Display.width() / 2,
+                                M5.Display.height() / 2);
 }
 
 void loop() {
-    StickCP2.update();
-    if (StickCP2.BtnA.wasPressed()) {
-        StickCP2.Speaker.tone(8000, 20);
-        StickCP2.Display.clear();
-        StickCP2.Display.drawString("A Btn Pressed",
-                                    StickCP2.Display.width() / 2,
-                                    StickCP2.Display.height() / 2);
+    M5.update();
+    if (M5.BtnA.wasPressed()) {
+        M5.Speaker.tone(8000, 20);
+        M5.Display.clear();
+        M5.Display.drawString("A Btn Pressed",
+                                    M5.Display.width() / 2,
+                                    M5.Display.height() / 2);
     }
-    if (StickCP2.BtnA.wasReleased()) {
-        StickCP2.Speaker.tone(8000, 20);
-        StickCP2.Display.clear();
-        StickCP2.Display.drawString("A Btn Released",
-                                    StickCP2.Display.width() / 2,
-                                    StickCP2.Display.height() / 2);
+    if (M5.BtnA.wasReleased()) {
+        M5.Speaker.tone(8000, 20);
+        M5.Display.clear();
+        M5.Display.drawString("A Btn Released",
+                                    M5.Display.width() / 2,
+                                    M5.Display.height() / 2);
     }
-    if (StickCP2.BtnB.wasPressed()) {
-        StickCP2.Speaker.tone(8000, 20);
-        StickCP2.Display.clear();
-        StickCP2.Display.drawString("B Btn Pressed",
-                                    StickCP2.Display.width() / 2,
-                                    StickCP2.Display.height() / 2);
+    if (M5.BtnB.wasPressed()) {
+        M5.Speaker.tone(8000, 20);
+        M5.Display.clear();
+        M5.Display.drawString("B Btn Pressed",
+                                    M5.Display.width() / 2,
+                                    M5.Display.height() / 2);
     }
-    if (StickCP2.BtnB.wasReleased()) {
-        StickCP2.Speaker.tone(8000, 20);
-        StickCP2.Display.clear();
-        StickCP2.Display.drawString("B Btn Released",
-                                    StickCP2.Display.width() / 2,
-                                    StickCP2.Display.height() / 2);
+    if (M5.BtnB.wasReleased()) {
+        M5.Speaker.tone(8000, 20);
+        M5.Display.clear();
+        M5.Display.drawString("B Btn Released",
+                                    M5.Display.width() / 2,
+                                    M5.Display.height() / 2);
     }
 }
