@@ -28,21 +28,61 @@ const uint16_t numChannels = 100;
 // counting things
 uint8_t sendCounter = 0;
 
+// relative locations for the colors on the Simon Console
+enum color {
+  I_RED = 0,  // upper right
+  I_GRN,      // upper left
+  I_BLU,      // lower right
+  I_YEL,      // lower left
+  N_COLORS,   // use this to size arrays appropriately
+
+  I_START = N_COLORS,  // 4
+  I_RIGHT,
+  I_LEFT,
+  N_BUTTONS
+};
+
+typedef struct {
+  byte master;
+  byte red;
+  byte green;
+  byte blue;
+  byte white;
+} colorDMX;
+
+const colorDMX cOff = { 0, 0, 0, 0, 0 };
+const colorDMX cRed = { 255, 255, 0, 0, 0 };
+const colorDMX cGreen = { 255, 0, 255, 0, 0 };
+const colorDMX cBlue = { 255, 0, 0, 255, 0 };
+const colorDMX cYellow = { 255, 255, 100, 0, 0 };
+const colorDMX cWhite = { 255, 0, 0, 0, 255 };
+// and this serves as an easy way to pull out the right RGB color from the
+const colorDMX cMap[N_COLORS] = { cRed, cGreen, cBlue, cYellow };
+
+float mapfloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+// tedious to do this, but prevents a flicker from .clear() taking ~50ms to execute.
+M5Canvas spr = M5Canvas(&M5.Display);
+
 void setup() {
   // https://docs.m5stack.com/en/arduino/m5gfx/m5gfx_appendix
   // https://github.com/m5stack/M5StickCPlus2
   auto cfg = M5.config();
+  cfg.serial_baudrate = 115200;
   M5.begin(cfg);
+  Serial.flush();
 
-  M5.Display.setRotation(3);
-  M5.Display.setTextColor(BLUE);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextFont(&fonts::FreeSans12pt7b);
-  M5.Display.setTextSize(1.3);
-  M5.Display.clear();
-  M5.Display.drawString("DMX Test", M5.Display.width() / 2, M5.Display.height() / 2);
+  spr.createSprite(M5.Display.width(), M5.Display.height());
+  spr.setRotation(2);
+  spr.setTextColor(WHITE);
+  spr.setTextDatum(middle_center);
+  spr.setTextFont(&fonts::FreeSans12pt7b);
+  spr.setTextSize(1.0);
+  spr.clear();
 
-  Serial.println("SparkFun DMX Example 1 - Output");
+  Serial.println("DMX Test");
 
   // Begin DMX serial port
   dmxSerial.begin(DMX_BAUD, DMX_FORMAT, rxPin, txPin);
@@ -55,80 +95,153 @@ void setup() {
 
   Serial.println("DMX initialized!");
 
-  // set masters up.
-  dmx.writeByte(255, 1);
-  dmx.writeByte(255, 11);
-  dmx.update();
 }
 
 void loop() {
-
   // check for presses and the like.
   M5.update();
 
   // keep the DMX gear in sync; some drop out without a periodic update.
-  static Chrono dmxUpdate;
-  if (dmxUpdate.hasPassed(1000UL, true)) dmx.update();
+  static Chrono dmxHeartbeat;
+  if (dmxHeartbeat.hasPassed(1000UL, true)) dmx.update();
 
-  if (M5.BtnB.wasPressed()) {
-    // Turn on all fire
-    dmx.writeByte(255, 21);
-    dmx.writeByte(255, 22);
-
-    dmx.update(); // send it
-    dmxUpdate.restart(); // no need to resend
-
-    M5.Display.clear();
-    M5.Display.drawString("Fire On", M5.Display.width() / 2, M5.Display.height() / 3);
-  }
-
+  // rotate through which tower we're addressing
+  static byte towerIndex = 0;
   if (M5.BtnB.wasReleased()) {
-    // Turn on all fire
-    dmx.writeByte(0, 21);
-    dmx.writeByte(0, 22);
-
-    dmx.update(); // send it
-    dmxUpdate.restart(); // no need to resend
-
-    M5.Display.clear();
-    M5.Display.drawString("Fire Off", M5.Display.width() / 2, M5.Display.height() / 3);
+    // change which tower we're addressing
+    towerIndex = (towerIndex + 1) % N_COLORS;
   }
 
+  // Turn on all fire
   if (M5.BtnA.wasPressed()) {
-    // Turn on all lamps
-    dmx.writeByte(255, 2);
-    dmx.writeByte(255, 3);
-    dmx.writeByte(255, 4);
-    dmx.writeByte(255, 5);
+    // clear the fire
+    dmx.writeByte(0, (0 * 10) + 9);
+    dmx.writeByte(0, (0 * 10) + 10);
+    dmx.writeByte(0, (1 * 10) + 9);
+    dmx.writeByte(0, (1 * 10) + 10);
+    dmx.writeByte(0, (2 * 10) + 9);
+    dmx.writeByte(0, (2 * 10) + 10);
+    dmx.writeByte(0, (3 * 10) + 9);
+    dmx.writeByte(0, (3 * 10) + 10);
 
-    dmx.writeByte(255, 12);
-    dmx.writeByte(255, 13);
-    dmx.writeByte(255, 14);
-    dmx.writeByte(255, 15);
+    // write fire to the correct tower
+    dmx.writeByte(255, (towerIndex * 10) + 9);
+    dmx.writeByte(255, (towerIndex * 10) + 10);
 
-    dmx.update();
-    dmxUpdate.restart();
-
-    M5.Display.clear();
-    M5.Display.drawString("Light On", M5.Display.width() / 2, M5.Display.height() * 2 / 3);
+    dmx.update();            // send it
+    dmxHeartbeat.restart();  // no need to resend
   }
 
+  // Turn on all fire
   if (M5.BtnA.wasReleased()) {
-    // turn off all lamps
-    dmx.writeByte(0, 2);
-    dmx.writeByte(0, 3);
-    dmx.writeByte(0, 4);
-    dmx.writeByte(0, 5);
+    dmx.writeByte(0, (towerIndex * 10) + 9);
+    dmx.writeByte(0, (towerIndex * 10) + 10);
 
-    dmx.writeByte(0, 12);
-    dmx.writeByte(0, 13);
-    dmx.writeByte(0, 14);
-    dmx.writeByte(0, 15);
+    dmx.update();            // send it
+    dmxHeartbeat.restart();  // no need to resend
+  }
+
+  // check sensors
+  static color newColor = I_RED, currentColor = I_RED;
+  static float avgIntensity = 0.0;
+  static auto data = M5.Imu.getImuData();
+
+  if (M5.Imu.update()) {
+    data = M5.Imu.getImuData();
+
+    if (data.accel.x > 0 && data.accel.y > 0) newColor = I_RED;
+    if (data.accel.x < 0 && data.accel.y > 0) newColor = I_GRN;
+    if (data.accel.x < 0 && data.accel.y < 0) newColor = I_YEL;
+    if (data.accel.x > 0 && data.accel.y < 0) newColor = I_BLU;
+
+    float accZ = constrain(data.accel.z, 0.0, 1.0);
+    float newIntensity = mapfloat(accZ, 0.0, 1.0, 255.0, 0.0);
+
+    // smooth the sensor results; exponential smoother.
+    const float smooth = 10;
+    avgIntensity = (avgIntensity * (smooth - 1.0) + newIntensity) / smooth;
+  }
+
+  // send dmx
+  static Chrono dmxUpdate;
+
+  if (dmxUpdate.hasPassed(50UL, true)) {
+
+    // clear the lights
+    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (0 * 10) + 1);
+    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (1 * 10) + 1);
+    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (2 * 10) + 1);
+    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (3 * 10) + 1);
+
+    // get our color
+    colorDMX color = cMap[newColor];
+    color.master = (byte)avgIntensity;
+
+    // write this color to the correct tower.
+    dmx.writeBytes((uint8_t*)&color, sizeof(colorDMX), (towerIndex * 10) + 1);
 
     dmx.update();
-    dmxUpdate.restart();
+    dmxHeartbeat.restart();
+  }
 
-    M5.Display.clear();
-    M5.Display.drawString("Light Off", M5.Display.width() / 2, M5.Display.height() * 2 / 3);
+  // show sensors
+  static Chrono displayUpdate;
+
+  if (displayUpdate.hasPassed(100UL, true)) {
+
+//    M5.Display.clear();
+    spr.fillSprite(TFT_BLACK);
+    spr.setCursor(0,0);
+
+    switch (towerIndex) {
+      case I_RED:
+        spr.setTextColor(RED);
+        spr.drawString("Tower: Red", spr.width() / 2, spr.height() * 1 / 5);
+        break;
+      case I_GRN:
+        spr.setTextColor(GREEN);
+        spr.drawString("Tower: Green", spr.width() / 2, spr.height() * 1 / 5);
+        break;
+      case I_YEL:
+        spr.setTextColor(YELLOW);
+        spr.drawString("Tower: Yellow", spr.width() / 2, spr.height() * 1 / 5);
+        break;
+      case I_BLU:
+        spr.setTextColor(BLUE);
+        spr.drawString("Tower: Blue", spr.width() / 2, spr.height() * 1 / 5);
+        break;
+    }
+
+    switch (newColor) {
+      case I_RED:
+        spr.setTextColor(RED);
+        spr.drawString("Color: Red", spr.width() / 2, spr.height() * 2 / 5);
+        break;
+      case I_GRN:
+        spr.setTextColor(GREEN);
+        spr.drawString("Color: Green", spr.width() / 2, spr.height() * 2 / 5);
+        break;
+      case I_YEL:
+        spr.setTextColor(YELLOW);
+        spr.drawString("Color: Yellow", spr.width() / 2, spr.height() * 2 / 5);
+        break;
+      case I_BLU:
+        spr.setTextColor(BLUE);
+        spr.drawString("Color: Blue", spr.width() / 2, spr.height() * 2 / 5);
+        break;
+    }
+
+    String s = "Level: " + String(avgIntensity, 0);
+    spr.setTextColor(WHITE);
+    spr.drawString(s, spr.width() / 2, spr.height() * 3 / 5);
+
+    switch (M5.BtnA.isPressed()) {
+      case true:
+        spr.setTextColor(WHITE);
+        spr.drawString("FIRE", spr.width() / 2, spr.height() * 4 / 5);
+        break;
+    }
+
+    spr.pushSprite(0,0);
   }
 }
