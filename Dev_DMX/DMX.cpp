@@ -8,12 +8,19 @@ SparkFunDMX dmxDevice;
 HardwareSerial dmxSerial(2);
 
 // Serial pinout
-const uint8_t enPin = -1, rxPin = G33, txPin = G32;
+
+// const uint8_t enPin = -1, rxPin = G33, txPin = G32;
+const uint8_t enPin = -1;
+const uint8_t rxPin = G33;
+const uint8_t txPin = G32;
+//const uint8_t rxPin = SCL;
+//const uint8_t txPin = SDA;
 
 // Number of DMX channels, can be up tp 512
-const uint16_t numChannels = 10*((byte)I_ALL+1);
+// REVISIT
+const uint16_t numChannels = 64;
 
-uint16_t dmxSerialBuffer = 0;
+uint16_t dmxSerialBufferSize = 0;
 
 void DMX::begin() {
   // Begin DMX serial port
@@ -21,7 +28,7 @@ void DMX::begin() {
   dmxSerial.setTxBufferSize(512); // dmx universe size.
   dmxSerial.flush();
   // how big is the buffer?
-  dmxSerialBuffer = dmxSerial.availableForWrite();
+  dmxSerialBufferSize = dmxSerial.availableForWrite();
 
   // Begin DMX driver
   dmxDevice.begin(dmxSerial, enPin, numChannels);
@@ -35,7 +42,7 @@ void DMX::begin() {
 
 bool DMX::update() {
   // current outbound buffer size
-  uint16_t sendingBufferSize = dmxSerialBuffer - dmxSerial.availableForWrite();
+  uint16_t sendingBufferSize = dmxSerialBufferSize - dmxSerial.availableForWrite();
   // if we're currently sending, bail out.
   if( sendingBufferSize > 0 ) return(false);
 
@@ -68,9 +75,10 @@ void DMX::towerLight(tower Tower, colorInstruction Color) {
   // write this color to the correct tower.
   dmxDevice.writeBytes((uint8_t*)&Color, sizeof(colorInstruction), addressStart);
 
+  // schedule a send
   this->needsUpdate = true;
 
-  Serial << "T" << (byte)Tower << " A"<< addressStart << " -> M" << Color.master << " R" << Color.red << " G" << Color.green << " B" << Color.blue << endl;
+  Serial << "T" << (byte)Tower << " A" << addressStart << " -> M" << Color.master << " R" << Color.red << " G" << Color.green << " B" << Color.blue << endl;
 }
 
 void DMX::towerFire(tower Tower, fireInstruction Fire) {
@@ -89,6 +97,7 @@ void DMX::towerFire(tower Tower, fireInstruction Fire) {
   // write this color to the correct tower.
   dmxDevice.writeBytes((uint8_t*)&Fire, sizeof(fireInstruction), addressStart);
 
+  // schedule a send
   this->needsUpdate = true;
 
   Serial << "T" << (byte)Tower << " A"<< addressStart << " -> 1 " << Fire.first << " 2 " << Fire.second << endl;

@@ -1,4 +1,4 @@
-// Board: M5StickCPlus2 within M5Stack definitions (NOT esp32 definition)
+// Board: M5StackCore2 within M5Stack definitions (NOT esp32 definition)
 
 // https://github.com/m5stack/M5Unified
 #include <M5Unified.h>
@@ -19,6 +19,7 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 // tedious to do this, but prevents a flicker from .clear() taking ~50ms to execute.
 M5Canvas spr = M5Canvas(&M5.Display);
 
+// heavy-lifting library attached as .cpp and .h files. grab this.  
 DMX dmx;
 
 void setup() {
@@ -30,7 +31,7 @@ void setup() {
   Serial.flush();
 
   spr.createSprite(M5.Display.width(), M5.Display.height());
-  spr.setRotation(2);
+  spr.setRotation(0);
   spr.setTextColor(WHITE);
   spr.setTextDatum(middle_center);
   spr.setTextFont(&fonts::FreeSans12pt7b);
@@ -49,7 +50,7 @@ void loop() {
   dmx.update();
 
   // rotate through which tower we're addressing
-  static tower towerIndex = I_RED;
+  static tower towerIndex = I_ALL;
   if (M5.BtnB.wasReleased()) {
 
     // shut down everything, first.  
@@ -57,7 +58,7 @@ void loop() {
     dmx.towerFire(towerIndex, fOff);
 
     // change which tower we're addressing
-    towerIndex = (tower)(((byte)towerIndex + 1) % (byte)I_ALL);
+    towerIndex = (tower)(((byte)towerIndex + 1) % ((byte)I_ALL + 1));
   }
 
   // Turn on all fire
@@ -74,16 +75,18 @@ void loop() {
   if (M5.Imu.update()) {
     data = M5.Imu.getImuData();
 
-    if (data.accel.x > 0 && data.accel.y > 0) colorIndex = I_RED;
-    if (data.accel.x < 0 && data.accel.y > 0) colorIndex = I_GRN;
-    if (data.accel.x < 0 && data.accel.y < 0) colorIndex = I_YEL;
-    if (data.accel.x > 0 && data.accel.y < 0) colorIndex = I_BLU;
+    // color by tilt
+    if (data.accel.x < 0 && data.accel.y < 0) colorIndex = I_RED;
+    if (data.accel.x > 0 && data.accel.y < 0) colorIndex = I_GRN;
+    if (data.accel.x > 0 && data.accel.y > 0) colorIndex = I_YEL;
+    if (data.accel.x < 0 && data.accel.y > 0) colorIndex = I_BLU;
 
+    // degree of tilt
     float accZ = constrain(data.accel.z, 0.0, 1.0);
     float newIntensity = mapfloat(accZ, 0.0, 1.0, 255.0, 0.0);
 
     // smooth the sensor results; exponential smoother.
-    const float smooth = 10;
+    const float smooth = 10.0;
     avgIntensity = (avgIntensity * (smooth - 1.0) + newIntensity) / smooth;
   }
 
@@ -123,6 +126,10 @@ void loop() {
         spr.setTextColor(BLUE);
         spr.drawString("Tower: Blue", spr.width() / 2, spr.height() * 1 / 5);
         break;
+      case I_ALL:
+        spr.setTextColor(WHITE);
+        spr.drawString("Tower: ALL", spr.width() / 2, spr.height() * 1 / 5);
+        break;
     }
 
     switch (colorIndex) {
@@ -141,6 +148,10 @@ void loop() {
       case I_BLU:
         spr.setTextColor(BLUE);
         spr.drawString("Color: Blue", spr.width() / 2, spr.height() * 2 / 5);
+        break;
+      case I_ALL:
+        spr.setTextColor(WHITE);
+        spr.drawString("Color: ALL", spr.width() / 2, spr.height() * 2 / 5);
         break;
     }
 
