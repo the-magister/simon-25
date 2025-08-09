@@ -1,63 +1,16 @@
-/*
- * SPDX-FileCopyrightText: 2024 M5Stack Technology CO LTD
- *
- * SPDX-License-Identifier: MIT
- */
-
 // Board: M5StickCPlus2 within M5Stack definitions (NOT esp32 definition)
-
 
 // https://github.com/m5stack/M5Unified
 #include <M5Unified.h>
 // https://docs.m5stack.com/en/arduino/m5gfx/m5gfx_appendix
 #include <M5GFX.h>
 // https://github.com/sparkfun/SparkFunDMX/tree/master
+//#include <HardwareSerial.h>
 #include <SparkFunDMX.h>
 // https://github.com/SofaPirate/Chrono
 #include <Chrono.h>
-
-// Create DMX object
-SparkFunDMX dmx;
-// Create serial port to be used for DMX interface.
-HardwareSerial dmxSerial(2);
-// Serial pinout
-const uint8_t enPin = -1, rxPin = G33, txPin = G32;
-// Number of DMX channels, can be up tp 512
-const uint16_t numChannels = 100;
-
-// counting things
-uint8_t sendCounter = 0;
-
-// relative locations for the colors on the Simon Console
-enum color {
-  I_RED = 0,  // upper right
-  I_GRN,      // upper left
-  I_BLU,      // lower right
-  I_YEL,      // lower left
-  N_COLORS,   // use this to size arrays appropriately
-
-  I_START = N_COLORS,  // 4
-  I_RIGHT,
-  I_LEFT,
-  N_BUTTONS
-};
-
-typedef struct {
-  byte master;
-  byte red;
-  byte green;
-  byte blue;
-  byte white;
-} colorDMX;
-
-const colorDMX cOff = { 0, 0, 0, 0, 0 };
-const colorDMX cRed = { 255, 255, 0, 0, 0 };
-const colorDMX cGreen = { 255, 0, 255, 0, 0 };
-const colorDMX cBlue = { 255, 0, 0, 255, 0 };
-const colorDMX cYellow = { 255, 255, 100, 0, 0 };
-const colorDMX cWhite = { 255, 0, 0, 0, 255 };
-// and this serves as an easy way to pull out the right RGB color from the
-const colorDMX cMap[N_COLORS] = { cRed, cGreen, cBlue, cYellow };
+// Handle DMX calls for light and fire
+#include "DMX.h"
 
 float mapfloat(float x, float in_min, float in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
@@ -65,6 +18,8 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 
 // tedious to do this, but prevents a flicker from .clear() taking ~50ms to execute.
 M5Canvas spr = M5Canvas(&M5.Display);
+
+DMX dmx;
 
 void setup() {
   // https://docs.m5stack.com/en/arduino/m5gfx/m5gfx_appendix
@@ -83,76 +38,46 @@ void setup() {
   spr.clear();
 
   Serial.println("DMX Test");
-
-  // Begin DMX serial port
-  dmxSerial.begin(DMX_BAUD, DMX_FORMAT, rxPin, txPin);
-
-  // Begin DMX driver
-  dmx.begin(dmxSerial, enPin, numChannels);
-
-  // Set communicaiton direction, which can be changed on the fly as needed
-  dmx.setComDir(DMX_WRITE_DIR);
+  dmx.begin();
 
   Serial.println("DMX initialized!");
-
 }
 
 void loop() {
   // check for presses and the like.
   M5.update();
-
-  // keep the DMX gear in sync; some drop out without a periodic update.
-  static Chrono dmxHeartbeat;
-  if (dmxHeartbeat.hasPassed(1000UL, true)) dmx.update();
+  dmx.update();
 
   // rotate through which tower we're addressing
-  static byte towerIndex = 0;
+  static tower towerIndex = I_RED;
   if (M5.BtnB.wasReleased()) {
+
+    // shut down everything, first.  
+    dmx.towerLight(I_ALL, cOff);
+    dmx.towerFire(towerIndex, fOff);
+
     // change which tower we're addressing
-    towerIndex = (towerIndex + 1) % N_COLORS;
+    towerIndex = (tower)(((byte)towerIndex + 1) % (byte)I_ALL);
   }
 
   // Turn on all fire
-  if (M5.BtnA.wasPressed()) {
-    // clear the fire
-    dmx.writeByte(0, (0 * 10) + 9);
-    dmx.writeByte(0, (0 * 10) + 10);
-    dmx.writeByte(0, (1 * 10) + 9);
-    dmx.writeByte(0, (1 * 10) + 10);
-    dmx.writeByte(0, (2 * 10) + 9);
-    dmx.writeByte(0, (2 * 10) + 10);
-    dmx.writeByte(0, (3 * 10) + 9);
-    dmx.writeByte(0, (3 * 10) + 10);
+  if (M5.BtnA.wasPressed()) dmx.towerFire(towerIndex, fOn);
 
-    // write fire to the correct tower
-    dmx.writeByte(255, (towerIndex * 10) + 9);
-    dmx.writeByte(255, (towerIndex * 10) + 10);
-
-    dmx.update();            // send it
-    dmxHeartbeat.restart();  // no need to resend
-  }
-
-  // Turn on all fire
-  if (M5.BtnA.wasReleased()) {
-    dmx.writeByte(0, (towerIndex * 10) + 9);
-    dmx.writeByte(0, (towerIndex * 10) + 10);
-
-    dmx.update();            // send it
-    dmxHeartbeat.restart();  // no need to resend
-  }
+  // Turn off all fire
+  if (M5.BtnA.wasReleased()) dmx.towerFire(towerIndex, fOff);
 
   // check sensors
-  static color newColor = I_RED, currentColor = I_RED;
+  static tower colorIndex = I_RED;
   static float avgIntensity = 0.0;
   static auto data = M5.Imu.getImuData();
 
   if (M5.Imu.update()) {
     data = M5.Imu.getImuData();
 
-    if (data.accel.x > 0 && data.accel.y > 0) newColor = I_RED;
-    if (data.accel.x < 0 && data.accel.y > 0) newColor = I_GRN;
-    if (data.accel.x < 0 && data.accel.y < 0) newColor = I_YEL;
-    if (data.accel.x > 0 && data.accel.y < 0) newColor = I_BLU;
+    if (data.accel.x > 0 && data.accel.y > 0) colorIndex = I_RED;
+    if (data.accel.x < 0 && data.accel.y > 0) colorIndex = I_GRN;
+    if (data.accel.x < 0 && data.accel.y < 0) colorIndex = I_YEL;
+    if (data.accel.x > 0 && data.accel.y < 0) colorIndex = I_BLU;
 
     float accZ = constrain(data.accel.z, 0.0, 1.0);
     float newIntensity = mapfloat(accZ, 0.0, 1.0, 255.0, 0.0);
@@ -166,22 +91,11 @@ void loop() {
   static Chrono dmxUpdate;
 
   if (dmxUpdate.hasPassed(50UL, true)) {
-
-    // clear the lights
-    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (0 * 10) + 1);
-    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (1 * 10) + 1);
-    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (2 * 10) + 1);
-    dmx.writeBytes((uint8_t*)&cOff, sizeof(colorDMX), (3 * 10) + 1);
-
-    // get our color
-    colorDMX color = cMap[newColor];
+    // turn on specific lights
+    colorInstruction color = cMap[colorIndex];
     color.master = (byte)avgIntensity;
 
-    // write this color to the correct tower.
-    dmx.writeBytes((uint8_t*)&color, sizeof(colorDMX), (towerIndex * 10) + 1);
-
-    dmx.update();
-    dmxHeartbeat.restart();
+    dmx.towerLight(towerIndex, color);
   }
 
   // show sensors
@@ -189,9 +103,8 @@ void loop() {
 
   if (displayUpdate.hasPassed(100UL, true)) {
 
-//    M5.Display.clear();
     spr.fillSprite(TFT_BLACK);
-    spr.setCursor(0,0);
+    spr.setCursor(0, 0);
 
     switch (towerIndex) {
       case I_RED:
@@ -212,7 +125,7 @@ void loop() {
         break;
     }
 
-    switch (newColor) {
+    switch (colorIndex) {
       case I_RED:
         spr.setTextColor(RED);
         spr.drawString("Color: Red", spr.width() / 2, spr.height() * 2 / 5);
@@ -242,6 +155,6 @@ void loop() {
         break;
     }
 
-    spr.pushSprite(0,0);
+    spr.pushSprite(0, 0);
   }
 }
