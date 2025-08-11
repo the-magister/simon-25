@@ -29,7 +29,7 @@
 // Display geometry
 static constexpr int SCREEN_W = 320;
 static constexpr int SCREEN_H = 240;
-static constexpr int BORDER = 5;  // gap between buttons
+static constexpr int BORDER = 5;   // gap between buttons
 static constexpr int RADIUS = 30;  // corner radius
 
 // Pre-calc half sizes
@@ -75,11 +75,14 @@ Chrono dmxChrono;
 #define N_COLORS 4
 #define I_NONE 99
 
-// how loud?
-#define SPEAKER_VOLUME 255
+// SD card
 static constexpr const gpio_num_t SDCARD_CSPIN = GPIO_NUM_4;
+
+// Speaker: songs and tones
 uint8_t *wavBuf = nullptr;
 size_t wavLen = 0;
+#define SPEAKER_VOLUME 255
+const uint16_t Tones[N_COLORS] = { 330, 392, 196, 262 };
 
 // Button struct & array
 struct Btn {
@@ -139,6 +142,7 @@ void setup() {
 
   M5.Speaker.begin();
   M5.Speaker.setVolume(SPEAKER_VOLUME);
+
   Serial.println("Speaker OK");
 
   // DMX stuff
@@ -206,8 +210,8 @@ void playSD(String fname, uint32_t repeat) {
   free(wavBuf);
 
   // load the music
-  if( repeat == 1 ) wavLen = wavFile.size();
-  else wavLen = 44100UL; // cheaty-pants.  Since we'll repeat this, then get one second of a 44.1 kHz file.
+  if (repeat == 1) wavLen = wavFile.size();
+  else wavLen = 44100UL;  // cheaty-pants.  Since we'll repeat this, then get one second of a 44.1 kHz file.
 
   size_t heap_size = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
   Serial << "Allocating " << wavLen << " of available " << heap_size << " bytes for " << fname << endl;
@@ -221,24 +225,13 @@ void playSD(String fname, uint32_t repeat) {
 }
 
 void playTone(byte index) {
-  if (index == I_NONE) {
-    M5.Speaker.stop();
-    return;
+  for (byte i = I_RED; i < N_COLORS; i++) {
+    M5.Speaker.setChannelVolume(i, 0);
   }
 
-  String fname;
-  switch (index) {
-    // this creates a lot of lag, but I'm intentionally stress-testing running music on the same device.  
-    // almost certainly want to pre-load these into memory.
-    case I_RED: playSD("/tone_red.wav", 99); break;
-    case I_GREEN: playSD("/tone_green.wav", 99); break;
-    case I_BLUE: playSD("/tone_blue.wav", 99); break;
-    case I_YELLOW: playSD("/tone_yellow.wav", 99); break;
-    default:
-      Serial << "Can't load a tone file.  Exiting." << endl;
-      return;
-      break;
-  }
+  if (index >= N_COLORS) return;
+
+  M5.Speaker.setChannelVolume(index, 255);
 }
 
 void playFire(byte index, byte level) {
@@ -361,6 +354,13 @@ void startNewRound() {
   if (sequenceLen < MAX_SEQ) {
     sequence[sequenceLen++] = random(0, N_COLORS);
     gameState = GAME_SHOW;
+
+    // enable tones
+    for (byte i = I_RED; i < N_COLORS; i++) {
+      M5.Speaker.setChannelVolume(i, 0);
+      M5.Speaker.tone(Tones[i], UINT32_MAX, i, false);
+    }
+
   } else {
     fanfare();
   }
@@ -371,9 +371,16 @@ void fanfare() {
 
   Serial << "Fanfare with sequence length=" << sequenceLen << endl;
 
+  M5.Display.fillScreen(TFT_BLACK);
+
   File wavFile;
-  if (sequenceLen < 4) playSD("/Fail 1.wav", 1);
-  else playSD("/Win 1.wav", 1);
+  if (sequenceLen < 4) {
+    M5.Display.drawCenterString("!LOSE!", HALF_W, HALF_H-50, &fonts::DejaVu72);
+    playSD("/Fail 1.wav", 1);
+  } else {
+    M5.Display.drawCenterString("!WIN!", HALF_W, HALF_H-50, &fonts::DejaVu72);
+    playSD("/Win 1.wav", 1);
+  }
 
   // reset for next game
   sequenceLen = 0;
@@ -396,6 +403,8 @@ void fanfare() {
 
   playFire(I_ALL, 0);
   playColor(I_ALL, 0);
+
+  drawBoard(I_NONE);
 }
 
 void safeDMXUpdate() {
