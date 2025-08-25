@@ -210,7 +210,7 @@ void setup() {
   Serial.print("I2C address: ");
   Serial.println(addressToF);
 
-  ToF.setMeasurementTimingBudget(20000); // 20000us=20ms
+  ToF.setMeasurementTimingBudget(20000);  // 20000us=20ms
   ToF.startContinuous();
 
   Serial.print("ToF Reads: ");
@@ -252,10 +252,10 @@ void loop() {
       handleUserInput(true);
       break;
     case PROXIMITY:
-      
+
       static uint16_t ToFmeas;
       static Chrono cd;
-      if (cd.hasPassed(30UL, true)) {
+      if (cd.hasPassed(50UL, true)) {
         ToFmeas = ToF.readRangeContinuousMillimeters();
         const uint16_t topEnd = 1300;
         ToFmeas = constrain(ToFmeas, 0, topEnd);
@@ -266,10 +266,19 @@ void loop() {
         Serial.print(",ToF:");
         Serial.print(ToFmeas);
         Serial.println();
+
+        playColor(I_ALL, map(ToFmeas, 0, 100, 0, 255));
+
+        uint16_t prob = random(20, 90);
+        if (prob < ToFmeas) {
+          playFire(I_ALL, 255);
+        } else {
+          playFire(I_ALL, 0);
+        }
       }
-      
+
       // playFire(byte index, byte level)
-      
+
       break;
   }
 }
