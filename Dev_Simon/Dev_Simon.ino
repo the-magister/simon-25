@@ -17,6 +17,19 @@
 
 // probably want a ESP32-S3-WROOM-1U with 16 Mb of memory so we can store more songs.
 
+/*
+Audio: G0, G2, G19, G27, G34
+	I2C: G21, G22 (address: 0x10 and 0x33)
+
+DMX: G19, G27, G35
+
+ExtPort:
+	PORTB: G26, G36
+	PORTC: G14, G13
+	PORTD: G1 (was G35), G3 (was G34)
+	PORTE: not configured (was G19), (was G27)
+*/
+
 #include <SD.h>
 #include <M5Unified.hpp>  // v0.2.7
 #include <M5GFX.h>        // v0.2.9
@@ -25,6 +38,8 @@
 #include <vector>
 #include <Arduino.h>
 #include <Streaming.h>
+#include <Wire.h>
+#include <VL53L0X.h>
 
 // Display geometry
 static constexpr int SCREEN_W = 320;
@@ -51,20 +66,27 @@ int sequenceLen = 0, userIndex = 0;
 enum GameState { GAME_IDLE,
                  GAME_SHOW,
                  GAME_INPUT,
-                 TEST } gameState = GAME_IDLE;
+                 BONGO,
+                 PROXIMITY } gameState = GAME_IDLE;
 
 // DMX
 // --- DMX Configuration ------------------------------------------------------
-#define DMX_RX_PIN G33
-#define DMX_TX_PIN G32
-#define DMX_EN_PIN -1
+//DMX Unit to Port A
+//#define DMX_RX_PIN G33
+//#define DMX_TX_PIN G32
+//#define DMX_EN_PIN -1
+// DMX Base to Core2 bus
+// https://github.com/m5stack/M5Module-DMX512
+#define DMX_RX_PIN G35
+#define DMX_TX_PIN G19
+#define DMX_EN_PIN G27
+
 #define DMX_CHANNELS 64
 #define DMX_BAUD 250000
 #define DMX_FORMAT SERIAL_8N2
 #define DMX_BUF_SIZE 256
 HardwareSerial dmxSerial(2);
 SparkFunDMX dmx;
-Chrono dmxChrono;
 
 // indexing for colors, towers, DMX
 #define I_RED 0
@@ -74,6 +96,18 @@ Chrono dmxChrono;
 #define I_ALL 4
 #define N_COLORS 4
 #define I_NONE 99
+
+// A works
+#define PORTA_WIRE_SDA G32
+#define PORTA_WIRE_SCL G33
+
+// C works.. sorta
+#define PORTC_WIRE_SDA G14
+#define PORTC_WIRE_SCL G13
+
+VL53L0X ToF;
+TwoWire Wire2 = TwoWire(2);
+uint8_t addressToF;
 
 // SD card
 static constexpr const gpio_num_t SDCARD_CSPIN = GPIO_NUM_4;
@@ -109,6 +143,7 @@ void setup() {
   auto cfg = M5.config();
   cfg.serial_baudrate = 115200;
   M5.begin(cfg);
+
   Serial.println("=== Simon Setup ===");
 
   // random() is improved in ESP32
@@ -160,6 +195,27 @@ void setup() {
   safeDMXUpdate();
   Serial.println("DMX OK");
 
+  Serial.println("Initializing ToF....");
+  Wire2.begin(PORTA_WIRE_SDA, PORTA_WIRE_SCL);
+
+  ToF.setBus(&Wire2);
+  ToF.setTimeout(25);  // at least 20ms
+  if (!ToF.init()) {
+    Serial.println("Failed to detect and initialize ToF!");
+    delay(5000);
+    ESP.restart();
+  }
+
+  addressToF = ToF.getAddress();
+  Serial.print("I2C address: ");
+  Serial.println(addressToF);
+
+  ToF.setMeasurementTimingBudget(20000); // 20000us=20ms
+  ToF.startContinuous();
+
+  Serial.print("ToF Reads: ");
+  Serial.println(ToF.readRangeContinuousMillimeters());
+
   Serial.println("Setup complete");
 }
 
@@ -171,7 +227,8 @@ void loop() {
     sequenceLen = 0;
     gameState = GAME_IDLE;
   }
-  if (M5.BtnB.wasReleased()) gameState = TEST;
+  if (M5.BtnB.wasReleased()) gameState = BONGO;
+  if (M5.BtnC.wasReleased()) gameState = PROXIMITY;
 
   switch (gameState) {
     case GAME_IDLE:
@@ -191,8 +248,28 @@ void loop() {
     case GAME_INPUT:
       handleUserInput(false);
       break;
-    case TEST:
+    case BONGO:
       handleUserInput(true);
+      break;
+    case PROXIMITY:
+      
+      static uint16_t ToFmeas;
+      static Chrono cd;
+      if (cd.hasPassed(30UL, true)) {
+        ToFmeas = ToF.readRangeContinuousMillimeters();
+        const uint16_t topEnd = 1300;
+        ToFmeas = constrain(ToFmeas, 0, topEnd);
+        ToFmeas = map(ToFmeas, 0, topEnd, 100, 0);
+
+        Serial.print("Min:0,Max:");
+        Serial.print(100);
+        Serial.print(",ToF:");
+        Serial.print(ToFmeas);
+        Serial.println();
+      }
+      
+      // playFire(byte index, byte level)
+      
       break;
   }
 }
@@ -332,7 +409,7 @@ void handleUserInput(bool withFire) {
       drawBoard(I_NONE);
       playFire(I_ALL, 0);
 
-      if (gameState == TEST) break;
+      if (gameState == BONGO) break;
 
       if (i == sequence[userIndex]) {
         userIndex++;
@@ -375,10 +452,10 @@ void fanfare() {
 
   File wavFile;
   if (sequenceLen < 4) {
-    M5.Display.drawCenterString("!LOSE!", HALF_W, HALF_H-50, &fonts::DejaVu72);
+    M5.Display.drawCenterString("!LOSE!", HALF_W, HALF_H - 50, &fonts::DejaVu72);
     playSD("/Fail 1.wav", 1);
   } else {
-    M5.Display.drawCenterString("!WIN!", HALF_W, HALF_H-50, &fonts::DejaVu72);
+    M5.Display.drawCenterString("!WIN!", HALF_W, HALF_H - 50, &fonts::DejaVu72);
     playSD("/Win 1.wav", 1);
   }
 
